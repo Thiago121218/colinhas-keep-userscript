@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Colinhas do Keep (.zip Google Takeout + Preview + Copiar)
+// @name         colinhas.user.js
 // @namespace    http://tampermonkey.net/
 // @version      2.2
 // @description  Sugestões de colinhas do Keep com upload direto do .zip, preview do conteúdo e cópia automática para a área de transferência com ícone flutuante
