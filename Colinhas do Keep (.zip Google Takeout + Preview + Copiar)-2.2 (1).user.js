@@ -7,7 +7,10 @@
 // @match        *://*/*
 // @grant        none
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js
+// @updateURL    https://raw.githubusercontent.com/Thiago121218/colinhas-keep-userscript/main/colinhas.user.js
+// @downloadURL  https://raw.githubusercontent.com/Thiago121218/colinhas-keep-userscript/main/colinhas.user.js
 // ==/UserScript==
+
 
 (function () {
   'use strict';
