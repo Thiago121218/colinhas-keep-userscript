@@ -1,14 +1,15 @@
 // ==UserScript==
-// @name         colinhas.user.js
-// @namespace    http://tampermonkey.net/
-// @version      2.2
-// @description  Sugestões de colinhas do Keep com upload direto do .zip, preview do conteúdo e cópia automática para a área de transferência com ícone flutuante
+// @name         📋 Colinhas do Keep (.zip + Preview + Copiar)
+// @namespace    https://github.com/seu-usuario/colinhas-keep
+// @version      2.3
+// @description  Importa colinhas do Google Keep (.zip Takeout), exibe sugestões com preview e permite copiar com um clique via ícone flutuante arrastável
 // @author       Thiago
 // @match        *://*/*
 // @grant        none
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js
-// @updateURL    https://raw.githubusercontent.com/Thiago121218/colinhas-keep-userscript/main/colinhas.user.js
-// @downloadURL  https://raw.githubusercontent.com/Thiago121218/colinhas-keep-userscript/main/colinhas.user.js
+// @updateURL    https://raw.githubusercontent.com/seu-usuario/colinhas-keep/main/colinhas-do-keep.user.js
+// @downloadURL  https://raw.githubusercontent.com/seu-usuario/colinhas-keep/main/colinhas-do-keep.user.js
+// @license      MIT
 // ==/UserScript==
 
 
@@ -20,6 +21,11 @@
   let suggestionBox = null;
   let floatingIcon = null;
   let searchInput = null;
+  let isDragging = false;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let iconStartX = 0;
+  let iconStartY = 0;
 
   // Tema dark fixo
   const theme = {
@@ -67,6 +73,23 @@
     colinhas = [];
   };
 
+  // Salvar e carregar posição do ícone
+  const saveIconPosition = (x, y) => {
+    localStorage.setItem('colinhasKeepIconPosition', JSON.stringify({ x, y }));
+  };
+
+  const loadIconPosition = () => {
+    const data = localStorage.getItem('colinhasKeepIconPosition');
+    if (data) {
+      try {
+        return JSON.parse(data);
+      } catch (e) {
+        console.error("Erro ao carregar posição do ícone:", e);
+      }
+    }
+    return { x: 20, y: 20 }; // Posição padrão
+  };
+
   // Função para destacar texto que combina com a busca
   const highlightText = (text, searchTerm) => {
     if (!searchTerm || !text) return text;
@@ -76,13 +99,15 @@
   };
 
   const createFloatingIcon = () => {
+    const savedPosition = loadIconPosition();
+    
     const icon = document.createElement('div');
     icon.innerHTML = '📋';
-    icon.title = 'Colinhas do Keep';
+    icon.title = 'Colinhas do Keep (Arraste para mover)';
     icon.style.cssText = `
       position: fixed;
-      top: 20px;
-      right: 20px;
+      top: ${savedPosition.y}px;
+      right: ${savedPosition.x}px;
       width: 40px;
       height: 40px;
       background: ${theme.floatingIconBg};
@@ -92,28 +117,151 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      cursor: pointer;
+      cursor: grab;
       z-index: 999999;
       font-size: 18px;
       transition: all 0.3s ease;
       box-shadow: 0 2px 10px rgba(0,0,0,0.3);
       backdrop-filter: blur(5px);
+      user-select: none;
     `;
 
+    // Eventos de mouse para arrastar
+    icon.onmousedown = (e) => {
+      e.preventDefault();
+      isDragging = true;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      
+      const rect = icon.getBoundingClientRect();
+      iconStartX = window.innerWidth - rect.right;
+      iconStartY = rect.top;
+      
+      icon.style.cursor = 'grabbing';
+      icon.style.transition = 'none';
+      document.body.style.userSelect = 'none';
+    };
+
+    const handleMouseMove = (e) => {
+      if (!isDragging) return;
+      
+      e.preventDefault();
+      const deltaX = e.clientX - dragStartX;
+      const deltaY = e.clientY - dragStartY;
+      
+      let newX = iconStartX - deltaX;
+      let newY = iconStartY + deltaY;
+      
+      // Limitar dentro da tela
+      newX = Math.max(10, Math.min(window.innerWidth - 50, newX));
+      newY = Math.max(10, Math.min(window.innerHeight - 50, newY));
+      
+      icon.style.right = newX + 'px';
+      icon.style.top = newY + 'px';
+    };
+
+    const handleMouseUp = (e) => {
+      if (!isDragging) return;
+      
+      isDragging = false;
+      icon.style.cursor = 'grab';
+      icon.style.transition = 'all 0.3s ease';
+      document.body.style.userSelect = '';
+      
+      // Salvar nova posição
+      const rect = icon.getBoundingClientRect();
+      const newX = window.innerWidth - rect.right;
+      const newY = rect.top;
+      saveIconPosition(newX, newY);
+      
+      // Se foi um clique simples (não arrastou muito), abrir o painel
+      const deltaX = Math.abs(e.clientX - dragStartX);
+      const deltaY = Math.abs(e.clientY - dragStartY);
+      
+      if (deltaX < 5 && deltaY < 5) {
+        setTimeout(() => toggleSuggestionBox(), 10);
+      }
+    };
+
+    // Adicionar listeners ao document
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    // Eventos de hover
     icon.onmouseover = () => {
-      icon.style.background = theme.floatingIconHover;
-      icon.style.transform = 'scale(1.1)';
+      if (!isDragging) {
+        icon.style.background = theme.floatingIconHover;
+        icon.style.transform = 'scale(1.1)';
+      }
     };
 
     icon.onmouseout = () => {
-      icon.style.background = theme.floatingIconBg;
-      icon.style.transform = 'scale(1)';
+      if (!isDragging) {
+        icon.style.background = theme.floatingIconBg;
+        icon.style.transform = 'scale(1)';
+      }
     };
 
-    icon.onclick = (e) => {
-      e.stopPropagation();
-      toggleSuggestionBox();
+    // Suporte para touch (dispositivos móveis)
+    icon.ontouchstart = (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      isDragging = true;
+      dragStartX = touch.clientX;
+      dragStartY = touch.clientY;
+      
+      const rect = icon.getBoundingClientRect();
+      iconStartX = window.innerWidth - rect.right;
+      iconStartY = rect.top;
+      
+      icon.style.cursor = 'grabbing';
+      icon.style.transition = 'none';
     };
+
+    const handleTouchMove = (e) => {
+      if (!isDragging) return;
+      
+      e.preventDefault();
+      const touch = e.touches[0];
+      const deltaX = touch.clientX - dragStartX;
+      const deltaY = touch.clientY - dragStartY;
+      
+      let newX = iconStartX - deltaX;
+      let newY = iconStartY + deltaY;
+      
+      // Limitar dentro da tela
+      newX = Math.max(10, Math.min(window.innerWidth - 50, newX));
+      newY = Math.max(10, Math.min(window.innerHeight - 50, newY));
+      
+      icon.style.right = newX + 'px';
+      icon.style.top = newY + 'px';
+    };
+
+    const handleTouchEnd = (e) => {
+      if (!isDragging) return;
+      
+      isDragging = false;
+      icon.style.cursor = 'grab';
+      icon.style.transition = 'all 0.3s ease';
+      
+      // Salvar nova posição
+      const rect = icon.getBoundingClientRect();
+      const newX = window.innerWidth - rect.right;
+      const newY = rect.top;
+      saveIconPosition(newX, newY);
+      
+      // Se foi um tap simples, abrir o painel
+      const touch = e.changedTouches[0];
+      const deltaX = Math.abs(touch.clientX - dragStartX);
+      const deltaY = Math.abs(touch.clientY - dragStartY);
+      
+      if (deltaX < 5 && deltaY < 5) {
+        setTimeout(() => toggleSuggestionBox(), 10);
+      }
+    };
+
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd);
 
     document.body.appendChild(icon);
     floatingIcon = icon;
@@ -347,130 +495,129 @@
   };
 
   const createSuggestionBox = () => {
-  const box = document.createElement('div');
-  box.id = 'sugestao-colinha';
-  box.style.cssText = `
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 10000;
-  background: ${theme.background};
-  color: ${theme.textColor};
-  border: 2px solid ${theme.borderColor};
-  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-  display: none;
-  width: 600px;
-  max-width: 90vw;
-  max-height: 80vh;  /* Aumente para aproveitar melhor a tela */
-  overflow: hidden;  /* Impede vazamento para fora da caixa */
-  font-size: 14px;
-  padding: 20px;
-  border-radius: 12px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  backdrop-filter: blur(10px);
-`;
+    const box = document.createElement('div');
+    box.id = 'sugestao-colinha';
+    box.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 10000;
+      background: ${theme.background};
+      color: ${theme.textColor};
+      border: 2px solid ${theme.borderColor};
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      display: none;
+      width: 600px;
+      max-width: 90vw;
+      max-height: 80vh;
+      overflow: hidden;
+      font-size: 14px;
+      padding: 20px;
+      border-radius: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      backdrop-filter: blur(10px);
+    `;
 
+    const header = document.createElement('div');
+    header.style.cssText = `
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    `;
 
-  const header = document.createElement('div');
-  header.style.cssText = `
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 15px;
-  `;
+    const title = document.createElement('div');
+    title.textContent = '📋 Colinhas do Keep';
+    title.style.cssText = `
+      font-size: 16px;
+      font-weight: bold;
+      color: ${theme.textColor};
+    `;
 
-  const title = document.createElement('div');
-  title.textContent = '📋 Colinhas do Keep';
-  title.style.cssText = `
-    font-size: 16px;
-    font-weight: bold;
-    color: ${theme.textColor};
-  `;
+    const closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '✕';
+    closeBtn.style.cssText = `
+      background: none;
+      border: none;
+      color: ${theme.textColor};
+      font-size: 18px;
+      cursor: pointer;
+      padding: 5px;
+      border-radius: 3px;
+      opacity: 0.7;
+      transition: opacity 0.2s;
+    `;
+    closeBtn.onmouseover = () => closeBtn.style.opacity = '1';
+    closeBtn.onmouseout = () => closeBtn.style.opacity = '0.7';
+    closeBtn.onclick = () => closeSuggestionBox();
 
-  const closeBtn = document.createElement('button');
-  closeBtn.innerHTML = '✕';
-  closeBtn.style.cssText = `
-    background: none;
-    border: none;
-    color: ${theme.textColor};
-    font-size: 18px;
-    cursor: pointer;
-    padding: 5px;
-    border-radius: 3px;
-    opacity: 0.7;
-    transition: opacity 0.2s;
-  `;
-  closeBtn.onmouseover = () => closeBtn.style.opacity = '1';
-  closeBtn.onmouseout = () => closeBtn.style.opacity = '0.7';
-  closeBtn.onclick = () => closeSuggestionBox();
+    const managementIcon = document.createElement('div');
+    managementIcon.innerHTML = '⚙️';
+    managementIcon.title = 'Gerenciar colinhas';
+    managementIcon.style.cssText = `
+      font-size: 16px;
+      cursor: pointer;
+      opacity: 0.7;
+      transition: opacity 0.2s;
+      padding: 5px;
+      border-radius: 3px;
+      margin-right: 10px;
+    `;
+    managementIcon.onmouseover = () => managementIcon.style.opacity = '1';
+    managementIcon.onmouseout = () => managementIcon.style.opacity = '0.7';
+    managementIcon.onclick = (e) => {
+      e.stopPropagation();
+      toggleManagementPanel();
+    };
 
-  const managementIcon = document.createElement('div');
-  managementIcon.innerHTML = '⚙️';
-  managementIcon.title = 'Gerenciar colinhas';
-  managementIcon.style.cssText = `
-    font-size: 16px;
-    cursor: pointer;
-    opacity: 0.7;
-    transition: opacity 0.2s;
-    padding: 5px;
-    border-radius: 3px;
-    margin-right: 10px;
-  `;
-  managementIcon.onmouseover = () => managementIcon.style.opacity = '1';
-  managementIcon.onmouseout = () => managementIcon.style.opacity = '0.7';
-  managementIcon.onclick = (e) => {
-    e.stopPropagation();
-    toggleManagementPanel();
+    const headerRight = document.createElement('div');
+    headerRight.style.display = 'flex';
+    headerRight.style.alignItems = 'center';
+    headerRight.appendChild(managementIcon);
+    headerRight.appendChild(closeBtn);
+
+    header.appendChild(title);
+    header.appendChild(headerRight);
+
+    const searchContainer = createSearchInput();
+
+    const resultsContainer = document.createElement('div');
+    resultsContainer.id = 'results-container';
+    resultsContainer.style.cssText = `
+      max-height: calc(80vh - 130px);
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-width: thin;
+      scrollbar-color: ${theme.borderColor} transparent;
+    `;
+
+    const style = document.createElement('style');
+    style.textContent = `
+      #results-container::-webkit-scrollbar {
+        width: 8px;
+      }
+      #results-container::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      #results-container::-webkit-scrollbar-thumb {
+        background: ${theme.borderColor};
+        border-radius: 4px;
+      }
+      #results-container::-webkit-scrollbar-thumb:hover {
+        background: ${theme.hoverBackground};
+      }
+    `;
+    document.head.appendChild(style);
+
+    box.appendChild(header);
+    box.appendChild(searchContainer);
+    box.appendChild(resultsContainer);
+
+    document.body.appendChild(box);
+    suggestionBox = box;
+    return box;
   };
-
-  const headerRight = document.createElement('div');
-  headerRight.style.display = 'flex';
-  headerRight.style.alignItems = 'center';
-  headerRight.appendChild(managementIcon);
-  headerRight.appendChild(closeBtn);
-
-  header.appendChild(title);
-  header.appendChild(headerRight);
-
-  const searchContainer = createSearchInput();
-
-  const resultsContainer = document.createElement('div');
-  resultsContainer.id = 'results-container';
-  resultsContainer.style.cssText = `
-  max-height: calc(80vh - 130px);  /* Considera o espaço do header e input */
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: ${theme.borderColor} transparent;
-`;
-
-  const style = document.createElement('style');
-  style.textContent = `
-    #results-container::-webkit-scrollbar {
-      width: 8px;
-    }
-    #results-container::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    #results-container::-webkit-scrollbar-thumb {
-      background: ${theme.borderColor};
-      border-radius: 4px;
-    }
-    #results-container::-webkit-scrollbar-thumb:hover {
-      background: ${theme.hoverBackground};
-    }
-  `;
-  document.head.appendChild(style);
-
-  box.appendChild(header);
-  box.appendChild(searchContainer);
-  box.appendChild(resultsContainer);
-
-  document.body.appendChild(box);
-  suggestionBox = box;
-  return box;
-};
 
   const createNoColinhasMessage = () => {
     const container = document.createElement('div');
@@ -502,80 +649,80 @@
   };
 
   const showSuggestions = (value) => {
-  const resultsContainer = document.getElementById('results-container');
-  resultsContainer.innerHTML = '';
+    const resultsContainer = document.getElementById('results-container');
+    resultsContainer.innerHTML = '';
 
-  if (!value || value.length < 1) {
-    if (colinhas.length === 0) {
-      resultsContainer.appendChild(createNoColinhasMessage());
+    if (!value || value.length < 1) {
+      if (colinhas.length === 0) {
+        resultsContainer.appendChild(createNoColinhasMessage());
+      } else {
+        // Mostrar todas as colinhas se não há filtro
+        const allItems = colinhas.slice(0, 20); // Limitar a 20 itens
+        allItems.forEach(item => {
+          resultsContainer.appendChild(createSuggestionItem(item, ''));
+        });
+      }
+      return;
+    }
+
+    // Filtrar colinhas APENAS pelo título
+    const filtered = colinhas.filter(c =>
+      c.title.toLowerCase().includes(value.toLowerCase())
+    ).slice(0, 15);
+
+    if (filtered.length === 0) {
+      const noResults = document.createElement('div');
+      noResults.textContent = 'Nenhuma colinha encontrada para esta busca';
+      noResults.style.cssText = `
+        padding: 20px;
+        text-align: center;
+        color: ${theme.textColor};
+        font-size: 14px;
+        font-style: italic;
+      `;
+      resultsContainer.appendChild(noResults);
     } else {
-      // Mostrar todas as colinhas se não há filtro
-      const allItems = colinhas.slice(0, 20); // Limitar a 20 itens
-      allItems.forEach(item => {
-        resultsContainer.appendChild(createSuggestionItem(item, ''));
+      filtered.forEach(item => {
+        resultsContainer.appendChild(createSuggestionItem(item, value));
       });
     }
-    return;
-  }
-
-  // Filtrar colinhas APENAS pelo título
-  const filtered = colinhas.filter(c =>
-    c.title.toLowerCase().includes(value.toLowerCase())
-  ).slice(0, 15);
-
-  if (filtered.length === 0) {
-    const noResults = document.createElement('div');
-    noResults.textContent = 'Nenhuma colinha encontrada para esta busca';
-    noResults.style.cssText = `
-      padding: 20px;
-      text-align: center;
-      color: ${theme.textColor};
-      font-size: 14px;
-      font-style: italic;
-    `;
-    resultsContainer.appendChild(noResults);
-  } else {
-    filtered.forEach(item => {
-      resultsContainer.appendChild(createSuggestionItem(item, value));
-    });
-  }
-};
+  };
 
   const createSuggestionItem = (item, searchValue) => {
     const div = document.createElement('div');
     div.style.cssText = `
-  padding: 12px;
-  cursor: pointer;
-  border-bottom: 1px solid ${theme.borderColor};
-  transition: background 0.2s;
-  color: ${theme.textColor};
-  border-radius: 6px;
-  margin-bottom: 5px;
-  overflow-wrap: break-word;
-  word-break: break-word;
-  max-width: 100%;
-`;
+      padding: 12px;
+      cursor: pointer;
+      border-bottom: 1px solid ${theme.borderColor};
+      transition: background 0.2s;
+      color: ${theme.textColor};
+      border-radius: 6px;
+      margin-bottom: 5px;
+      overflow-wrap: break-word;
+      word-break: break-word;
+      max-width: 100%;
+    `;
 
     const titulo = document.createElement('div');
     titulo.innerHTML = highlightText(item.title, searchValue);
     titulo.style.cssText = `
-  font-weight: 600;
-  margin-bottom: 6px;
-  color: ${theme.textColor};
-  overflow-wrap: break-word;
-  word-break: break-word;
-`;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: ${theme.textColor};
+      overflow-wrap: break-word;
+      word-break: break-word;
+    `;
 
     const preview = document.createElement('div');
     const previewText = item.content.length > 150 ? item.content.slice(0, 147) + '...' : item.content;
     preview.innerHTML = highlightText(previewText, searchValue);
     preview.style.cssText = `
-  font-size: 13px;
-  color: ${theme.secondaryText};
-  line-height: 1.4;
-  overflow-wrap: break-word;
-  word-break: break-word;
-`;
+      font-size: 13px;
+      color: ${theme.secondaryText};
+      line-height: 1.4;
+      overflow-wrap: break-word;
+      word-break: break-word;
+    `;
     div.appendChild(titulo);
     div.appendChild(preview);
 
@@ -583,26 +730,26 @@
     div.onmouseout = () => div.style.background = 'transparent';
 
     div.onclick = async () => {
-  try {
-    await navigator.clipboard.writeText(item.content);
-    closeSuggestionBox(); // Fecha imediatamente após copiar
+      try {
+        await navigator.clipboard.writeText(item.content);
+        closeSuggestionBox(); // Fecha imediatamente após copiar
 
-    // Limpa busca (opcional, mas útil para o próximo uso)
-    if (searchInput) {
-      searchInput.value = '';
-      showSuggestions('');
-    }
-  } catch (err) {
-    console.error('Erro ao copiar:', err);
-    div.style.background = theme.errorBackground;
-    div.style.color = theme.errorColor;
+        // Limpa busca (opcional, mas útil para o próximo uso)
+        if (searchInput) {
+          searchInput.value = '';
+          showSuggestions('');
+        }
+      } catch (err) {
+        console.error('Erro ao copiar:', err);
+        div.style.background = theme.errorBackground;
+        div.style.color = theme.errorColor;
 
-    setTimeout(() => {
-      div.style.background = 'transparent';
-      div.style.color = theme.textColor;
-    }, 1000);
-  }
-};
+        setTimeout(() => {
+          div.style.background = 'transparent';
+          div.style.color = theme.textColor;
+        }, 1000);
+      }
+    };
 
     return div;
   };
@@ -652,6 +799,20 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         closeSuggestionBox();
+      }
+    });
+
+    // Reposicionar ícone quando a janela for redimensionada
+    window.addEventListener('resize', () => {
+      if (floatingIcon) {
+        const rect = floatingIcon.getBoundingClientRect();
+        let newX = Math.max(10, Math.min(window.innerWidth - 50, window.innerWidth - rect.right));
+        let newY = Math.max(10, Math.min(window.innerHeight - 50, rect.top));
+        
+        floatingIcon.style.right = newX + 'px';
+        floatingIcon.style.top = newY + 'px';
+        
+        saveIconPosition(newX, newY);
       }
     });
   };
