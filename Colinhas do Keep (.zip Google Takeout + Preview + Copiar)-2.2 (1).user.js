@@ -1,17 +1,13 @@
 // ==UserScript==
-// @name         📋 Colinhas do Keep (.zip + Preview + Copiar)
-// @namespace    https://github.com/seu-usuario/colinhas-keep
-// @version      2.3
-// @description  Importa colinhas do Google Keep (.zip Takeout), exibe sugestões com preview e permite copiar com um clique via ícone flutuante arrastável
+// @name         Colinhas do Keep (.zip Google Takeout + Preview + Copiar)
+// @namespace    http://tampermonkey.net/
+// @version      2.4
+// @description  Sugestões de colinhas do Keep com upload direto do .zip, preview do conteúdo e cópia automática para a área de transferência com ícone flutuante arrastável
 // @author       Thiago
 // @match        *://*/*
 // @grant        none
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js
-// @updateURL    https://raw.githubusercontent.com/seu-usuario/colinhas-keep/main/colinhas-do-keep.user.js
-// @downloadURL  https://raw.githubusercontent.com/seu-usuario/colinhas-keep/main/colinhas-do-keep.user.js
-// @license      MIT
 // ==/UserScript==
-
 
 (function () {
   'use strict';
@@ -100,7 +96,7 @@
 
   const createFloatingIcon = () => {
     const savedPosition = loadIconPosition();
-    
+
     const icon = document.createElement('div');
     icon.innerHTML = '📋';
     icon.title = 'Colinhas do Keep (Arraste para mover)';
@@ -132,11 +128,11 @@
       isDragging = true;
       dragStartX = e.clientX;
       dragStartY = e.clientY;
-      
+
       const rect = icon.getBoundingClientRect();
       iconStartX = window.innerWidth - rect.right;
       iconStartY = rect.top;
-      
+
       icon.style.cursor = 'grabbing';
       icon.style.transition = 'none';
       document.body.style.userSelect = 'none';
@@ -144,40 +140,40 @@
 
     const handleMouseMove = (e) => {
       if (!isDragging) return;
-      
+
       e.preventDefault();
       const deltaX = e.clientX - dragStartX;
       const deltaY = e.clientY - dragStartY;
-      
+
       let newX = iconStartX - deltaX;
       let newY = iconStartY + deltaY;
-      
+
       // Limitar dentro da tela
       newX = Math.max(10, Math.min(window.innerWidth - 50, newX));
       newY = Math.max(10, Math.min(window.innerHeight - 50, newY));
-      
+
       icon.style.right = newX + 'px';
       icon.style.top = newY + 'px';
     };
 
     const handleMouseUp = (e) => {
       if (!isDragging) return;
-      
+
       isDragging = false;
       icon.style.cursor = 'grab';
       icon.style.transition = 'all 0.3s ease';
       document.body.style.userSelect = '';
-      
+
       // Salvar nova posição
       const rect = icon.getBoundingClientRect();
       const newX = window.innerWidth - rect.right;
       const newY = rect.top;
       saveIconPosition(newX, newY);
-      
+
       // Se foi um clique simples (não arrastou muito), abrir o painel
       const deltaX = Math.abs(e.clientX - dragStartX);
       const deltaY = Math.abs(e.clientY - dragStartY);
-      
+
       if (deltaX < 5 && deltaY < 5) {
         setTimeout(() => toggleSuggestionBox(), 10);
       }
@@ -209,52 +205,52 @@
       isDragging = true;
       dragStartX = touch.clientX;
       dragStartY = touch.clientY;
-      
+
       const rect = icon.getBoundingClientRect();
       iconStartX = window.innerWidth - rect.right;
       iconStartY = rect.top;
-      
+
       icon.style.cursor = 'grabbing';
       icon.style.transition = 'none';
     };
 
     const handleTouchMove = (e) => {
       if (!isDragging) return;
-      
+
       e.preventDefault();
       const touch = e.touches[0];
       const deltaX = touch.clientX - dragStartX;
       const deltaY = touch.clientY - dragStartY;
-      
+
       let newX = iconStartX - deltaX;
       let newY = iconStartY + deltaY;
-      
+
       // Limitar dentro da tela
       newX = Math.max(10, Math.min(window.innerWidth - 50, newX));
       newY = Math.max(10, Math.min(window.innerHeight - 50, newY));
-      
+
       icon.style.right = newX + 'px';
       icon.style.top = newY + 'px';
     };
 
     const handleTouchEnd = (e) => {
       if (!isDragging) return;
-      
+
       isDragging = false;
       icon.style.cursor = 'grab';
       icon.style.transition = 'all 0.3s ease';
-      
+
       // Salvar nova posição
       const rect = icon.getBoundingClientRect();
       const newX = window.innerWidth - rect.right;
       const newY = rect.top;
       saveIconPosition(newX, newY);
-      
+
       // Se foi um tap simples, abrir o painel
       const touch = e.changedTouches[0];
       const deltaX = Math.abs(touch.clientX - dragStartX);
       const deltaY = Math.abs(touch.clientY - dragStartY);
-      
+
       if (deltaX < 5 && deltaY < 5) {
         setTimeout(() => toggleSuggestionBox(), 10);
       }
@@ -755,21 +751,24 @@
   };
 
   const toggleSuggestionBox = () => {
-    if (suggestionBox.style.display === 'none' || suggestionBox.style.display === '') {
-      suggestionBox.style.display = 'block';
-      showSuggestions('');
-      if (searchInput) {
-        setTimeout(() => searchInput.focus(), 100);
-      }
-    } else {
-      closeSuggestionBox();
+  if (suggestionBox.style.display === 'none' || suggestionBox.style.display === '') {
+    suggestionBox.style.display = 'block';
+    floatingIcon.style.display = 'none'; // Oculta o ícone quando abre a interface
+    showSuggestions('');
+    if (searchInput) {
+      setTimeout(() => searchInput.focus(), 100);
     }
-  };
+  } else {
+    closeSuggestionBox();
+  }
+};
+
 
   const closeSuggestionBox = () => {
-    suggestionBox.style.display = 'none';
-    managementPanel.style.display = 'none';
-  };
+  suggestionBox.style.display = 'none';
+  managementPanel.style.display = 'none';
+  floatingIcon.style.display = 'flex'; // Mostra o ícone novamente quando fecha a interface
+};
 
   const toggleManagementPanel = () => {
     const isVisible = managementPanel.style.display === 'block';
@@ -808,10 +807,10 @@
         const rect = floatingIcon.getBoundingClientRect();
         let newX = Math.max(10, Math.min(window.innerWidth - 50, window.innerWidth - rect.right));
         let newY = Math.max(10, Math.min(window.innerHeight - 50, rect.top));
-        
+
         floatingIcon.style.right = newX + 'px';
         floatingIcon.style.top = newY + 'px';
-        
+
         saveIconPosition(newX, newY);
       }
     });
